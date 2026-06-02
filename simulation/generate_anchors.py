@@ -33,6 +33,89 @@ def generate_circular_anchors(center_point, radius, num_anchors_N):
     
     return anchors
 
+def generate_linear_anchors(center_point, spacing_m, num_anchors_N, angle_degrees=0.0):
+    """
+    Generates the coordinates of N anchors perfectly aligned in a straight line 
+    passing through a center point at a specific angle.
+    
+    Parameters:
+    -----------
+    center_point : list or numpy.ndarray
+        The [X, Y] coordinates of the central point of the line array.
+    spacing_m : float
+        The physical distance (in meters) between adjacent anchors.
+    num_anchors_N : int
+        The total number of anchors to place.
+    angle_degrees : float
+        The heading of the line in degrees (0 = along X-axis, 90 = along Y-axis).
+        
+    Returns:
+    --------
+    numpy.ndarray
+        An (N, 2) array containing the [X, Y] coordinates of the linear anchor array.
+    """
+    center_point = np.asarray(center_point)
+    
+    # 1. Convert the heading angle to radians
+    angle_rad = np.radians(angle_degrees)
+    
+    # 2. Create centered linear step indices 
+    # For example, if N=5, steps = [-2, -1, 0, 1, 2]
+    # If N=4, steps = [-1.5, -0.5, 0.5, 1.5]
+    steps = np.arange(num_anchors_N) - (num_anchors_N - 1) / 2.0
+    
+    # 3. Calculate absolute 1D distances along the line from the center
+    distances = steps * spacing_m
+    
+    # 4. Project the 1D distances onto the X and Y axes using trig
+    dx = distances * np.cos(angle_rad)
+    dy = distances * np.sin(angle_rad)
+    
+    # 5. Offset the generated grid by the true center coordinate
+    anchors = np.column_stack((dx, dy)) + center_point
+    
+    return anchors
+
+def generate_half_circle_anchors(center_point, radius, num_anchors_N, start_angle_degrees=0.0):
+    """
+    Generates the coordinates of N anchors evenly spaced along a half-circle arc
+    around a specified center point.
+    
+    Parameters:
+    -----------
+    center_point : list or numpy.ndarray
+        The [X, Y] coordinates of the arc's center.
+    radius : float
+        The radius of the half-circle in meters.
+    num_anchors_N : int
+        The number of anchors to distribute along the arc.
+    start_angle_degrees : float
+        The starting angle of the arc in degrees (0 = Positive X-axis).
+        The arc will sweep 180 degrees counter-clockwise from this angle.
+        
+    Returns:
+    --------
+    numpy.ndarray
+        An (N, 2) array containing the [X, Y] coordinates of the anchors.
+    """
+    center_point = np.asarray(center_point)
+    
+    # 1. Convert the starting angle to radians
+    start_rad = np.radians(start_angle_degrees)
+    end_rad = start_rad + np.pi  # A half-circle is exactly pi radians (180 degrees)
+    
+    # 2. Generate N equally spaced angles from start to end
+    # endpoint=True ensures anchors are placed exactly at both ends of the arc
+    angles = np.linspace(start_rad, end_rad, num_anchors_N, endpoint=True)
+    
+    # 3. Calculate relative X and Y offsets using trig
+    x_offsets = radius * np.cos(angles)
+    y_offsets = radius * np.sin(angles)
+    
+    # 4. Combine offsets and translate by the center point coordinates
+    anchors = np.column_stack((x_offsets, y_offsets)) + center_point
+    
+    return anchors
 
 def perturb_points_max_1m(points):
     """
@@ -63,7 +146,7 @@ def perturb_points_max_1m(points):
 
 if __name__ == "__main__":
     # Create 5 sample original points
-    original = generate_circular_anchors(np.array([0,0]), 100, 10)
+    original = generate_linear_anchors(np.array([0,0]), 10, 10, 0.0)
     
     # Perturb them
     perturbed = perturb_points_max_1m(original)
