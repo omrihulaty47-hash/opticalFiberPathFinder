@@ -1,97 +1,111 @@
+"""
+Fiber Optic Geometry Tracking and Localization Pipeline
+=======================================================
+This script simulates a unidirectional (forward-only) sequential estimation engine 
+to reconstruct the 2D geometry of a linear asset. Tracking stability relies strictly 
+on the historical spatial boundary of the previous node.
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
+
+# Custom project modules for localization physics, path generation, and filtering
 import fiber_simulation
 import point_est
 import generate_anchors
 import point_smoother
 
-N = 5
+# ==============================================================================
+# 1. SIMULATION ENVIRONMENT CONFIGURATION
+# ==============================================================================
+
+# N: Number of physical anchor nodes/transceivers deployed along the field
+N = 30
+
+number_of_points = 3001
+
+hearing_range = 700
+# r: Oversampling factor. Number of independent temporal measurements taken 
+# per coordinate node to average out zero-mean Gaussian noise.
 r = 1
 
-known_anchors = generate_anchors.generate_linear_anchors(np.array([1500, 1500]), 3000/N, N, 90)
+# Generate ideal linear tracking anchor coordinates spanning from Y = 100m to Y = 1500m.
+known_anchors = generate_anchors.generate_linear_anchors(np.array([100, 1500]), 3000/N, N, 90)
+
+# Simulate deployment error (GPS surveying inaccuracies).
 real_anchors = generate_anchors.perturb_points_max_1m(known_anchors)
-fiber_X, fiber_Y, _, start_point, end_point = fiber_simulation.generate_ultra_smooth_path()
 
-num_points = len(fiber_X)
+# Generate the true underlying continuous asset path (ground-truth).
+fiber_X, fiber_Y, _, start_point, end_point = \
+        fiber_simulation.generate_ultra_smooth_path(number_of_points)
 
-# --- 1. FORWARD PASS ---
-est_forward = np.zeros((num_points, 2))
-est_forward[0] = start_point
+    # --- FORWARD PASS ---
+est    = np.zeros((number_of_points, 2))
+est[0] = start_point
 
-for i in range(1, num_points):
-    est_forward[i] = 0
-    for j in range(r):
-        dists = point_est.generate_noisy_distances([fiber_X[i], fiber_Y[i]], real_anchors)
-        # Note: Passing the previous point 'est_forward[i-1]' for step constraints
-        point = point_est.estimate_single_point(known_anchors, dists, i, est_forward[i-1])
-        est_forward[i] += point
-    est_forward[i] /= r
+for i in range(1, number_of_points):
+    for _ in range(r):
+        dists = point_est.generate_noisy_distances(
+            [fiber_X[i], fiber_Y[i]], real_anchors,
+            # Pass hearing_range if your function supports it;
+            # remove the kwarg if it does not yet exist.
+            hearing_range=hearing_range,
+        )
+        est[i] += point_est.estimate_single_point(
+            known_anchors, dists, i, est[i - 1]
+        )
+    est[i] /= r
 
-# --- 2. BACKWARD PASS ---
-est_backward = np.zeros((num_points, 2))
-est_backward[-1] = end_point
-
-# Loop backwards from the second-to-last point down to 0
-for i in range(num_points - 2, -1, -1):
-    est_backward[i] = 0
-    for j in range(r):
-        dists = point_est.generate_noisy_distances([fiber_X[i], fiber_Y[i]], real_anchors)
-        # Note: In backward pass, the "previous" physical step is at index 'i+1'
-        point = point_est.estimate_single_point(known_anchors, dists, i, est_backward[i+1])
-        est_backward[i] += point
-    est_backward[i] /= r
-
-# --- 3. DYNAMIC WEIGHTED FUSION ---
-est = np.zeros((num_points, 2))
-
-for i in range(num_points):
-    # Calculate a weight from 0.0 to 1.0 based on position along the fiber
-    # i=0 (Start): w_backward = 0.0 -> 100% Forward Pass
-    # i=middle:    w_backward = 0.5 -> 50% Forward, 50% Backward
-    # i=end:       w_backward = 1.0 -> 100% Backward Pass
-    w_backward = i / (num_points - 1)
-    w_forward = 1.0 - w_backward
-    
-    # Apply the distance-based advantage
-    est[i] = (w_forward * est_forward[i]) + (w_backward * est_backward[i])
-
-# est_x ,est_y = point_smoother.smooth_path_by_polyfit_sections(est, 10, 5 , 0)
-est_x ,est_y = point_smoother.smooth_path_by_segments_with_overlap(est, 10, 10, 50, 0)
+# --- SMOOTH ---
+est_x, est_y = \
+    point_smoother.smooth_path_by_segments_with_overlap(
+        est, 20, 8, 50, 0
+    )
 
 
+# ==============================================================================
+# 3. POST-PROCESS SMOOTHING
+# ==============================================================================
+
+# Apply an overlapping segment-based polynomial smoothing filter to the raw forward estimates
+
+
+# ==============================================================================
+# 4. DATA VISUALIZATION & GEOMETRIC METRIC EVALUATION
+# ==============================================================================
+
+# --- PLOT 1: Spatial Geometry Overview ---
 plt.figure(figsize=(10, 6))
 plt.plot(fiber_X, fiber_Y, label="True path", linewidth=2)
 plt.scatter(est[:,0], est[:,1], label="Raw estimates", s=10, alpha=0.4)
+# plt.scatter(real_anchors[:,0], real_anchors[:,1], label="anchors")
 plt.plot(est_x, est_y, label="Smoothed estimate", linewidth=2, linestyle="--")
-plt.title("Fiber Path Estimation")
+plt.title("Forward-Only Fiber Path Estimation")
 plt.xlabel("X [m]")
 plt.ylabel("Y [m]")
 plt.legend()
 plt.tight_layout()
 plt.show()
- 
-# ── Plot 2: Error along path ───────────────────────────────────────────────────
-# 1. Convert your estimated path into a continuous function of Y.
-# We sort the arrays by est_y to ensure np.interp works correctly (it requires independent variables to be strictly increasing).
+
+# --- PLOT 2: Cross-Sectional Registration Error Analysis ---
+# Sort arrays by Y to ensure the independent variable strictly increases for 1D interpolation
 sort_idx = np.argsort(est_y)
 est_y_sorted = est_y[sort_idx]
 est_x_sorted = est_x[sort_idx]
 
-# 2. Interp allows us to input the fiber's Y positions and get what the 
-# Estimated X *would have been* at those exact same Y heights.
+# Resample the estimated X path coordinates onto the true ground-truth Y coordinate positions
 est_x_at_fiber_y = np.interp(fiber_Y, est_y_sorted, est_x_sorted)
 
-# 3. Calculate the clean, point-to-point horizontal distance at identical Y levels
+# Compute absolute horizontal offset errors at identical vertical cross-sections
 dists_points = np.abs(fiber_X - est_x_at_fiber_y)
  
 plt.figure(figsize=(10, 4))
 plt.plot(fiber_Y, dists_points, label="Point-wise error", linewidth=1.5)
 plt.axhline(dists_points.mean(), color="gray", linestyle=":", linewidth=1.2,
             label=f"Mean error: {dists_points.mean():.1f} m")
-plt.title("Estimation Error Along Fiber")
+plt.title("Estimation Error Along Fiber (Forward-Only)")
 plt.xlabel("Y position [m]")
 plt.ylabel("Error [m]")
 plt.legend()
 plt.tight_layout()
 plt.show()
-
