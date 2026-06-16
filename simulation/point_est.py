@@ -109,8 +109,8 @@ def estimate_single_point(anchors, noisy_distances, i, prev_point):
     # 5. Kinematic Step Restriction (Hard Clamp Constraint)
     # Prevents the optimization from making massive, non-physical spatial jumps due to noise.
     # If the solver jumps more than 1.0 meter from the previous position, cap the step length to 1.0.
-    # distance_to_prev = np.linalg.norm(result.x - prev_point)
-    # if distance_to_prev > 1.0:
+    distance_to_prev = np.linalg.norm(result.x - prev_point)
+    # if distance_to_prev > 5.0:
     #     direction = (result.x - prev_point) / distance_to_prev
     #     result.x = prev_point + direction
 

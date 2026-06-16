@@ -76,6 +76,64 @@ def generate_linear_anchors(center_point, spacing_m, num_anchors_N, angle_degree
     
     return anchors
 
+def generate_staggered_anchors(center_point, spacing_m, num_anchors_N, angle_degrees=0.0, stagger_offset_m=0.0):
+    """
+    Generates the coordinates of N anchors distributed along a line baseline,
+    but staggers them alternatingly left and right to maintain symmetry-breaking
+    coverage across a limited hearing range.
+    
+    Parameters:
+    -----------
+    center_point : list or numpy.ndarray
+        The [X, Y] coordinates of the central point of the line array.
+    spacing_m : float
+        The physical distance (in meters) between adjacent anchors along the track length.
+    num_anchors_N : int
+        The total number of anchors to place.
+    angle_degrees : float
+        The heading of the baseline in degrees (0 = along X-axis, 90 = along Y-axis).
+    stagger_offset_m : float, default=0.0
+        The distance (in meters) to displace anchors perpendicular to the baseline.
+        Alternates directions (+ / -) for each sequential anchor.
+        
+    Returns:
+    --------
+    numpy.ndarray
+        An (N, 2) array containing the [X, Y] coordinates of the staggered anchor array.
+    """
+    center_point = np.asarray(center_point)
+    
+    # 1. Convert the heading angle to radians
+    angle_rad = np.radians(angle_degrees)
+    
+    # 2. Create centered linear step indices along the track length
+    steps = np.arange(num_anchors_N) - (num_anchors_N - 1) / 2.0
+    distances = steps * spacing_m
+    
+    # 3. Project the base inline positions
+    dx = distances * np.cos(angle_rad)
+    dy = distances * np.sin(angle_rad)
+    anchors = np.column_stack((dx, dy)) + center_point
+    
+    # 4. Continuous Symmetry Breaking: Apply an alternating perpendicular offset
+    if stagger_offset_m != 0.0:
+        # Calculate the perpendicular unit vector (90 degrees counter-clockwise)
+        perp_angle_rad = angle_rad + (np.pi / 2.0)
+        perp_dir = np.array([np.cos(perp_angle_rad), np.sin(perp_angle_rad)])
+        
+        # Create an alternating array: [1.0, -1.0, 1.0, -1.0, ...]
+        # This creates a reliable zigzag down the entire track
+        alternator = np.ones(num_anchors_N)
+        alternator[1::2] = -1.0
+        
+        # Compute the scale of displacement for each anchor
+        offsets = alternator[:, np.newaxis] * stagger_offset_m * perp_dir
+        
+        # Apply the offsets globally across the array matrix
+        anchors += offsets
+        
+    return anchors
+
 def generate_half_circle_anchors(center_point, radius, num_anchors_N, start_angle_degrees=0.0):
     """
     Generates the coordinates of N anchors evenly spaced along a half-circle arc

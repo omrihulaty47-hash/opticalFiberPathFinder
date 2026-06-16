@@ -20,17 +20,17 @@ import point_smoother
 # ==============================================================================
 
 # N: Number of physical anchor nodes/transceivers deployed along the field
-N = 30
+N = 1000
 
 number_of_points = 3001
 
-hearing_range = 700
+hearing_range = 50
 # r: Oversampling factor. Number of independent temporal measurements taken 
 # per coordinate node to average out zero-mean Gaussian noise.
 r = 1
 
 # Generate ideal linear tracking anchor coordinates spanning from Y = 100m to Y = 1500m.
-known_anchors = generate_anchors.generate_linear_anchors(np.array([100, 1500]), 3000/N, N, 90)
+known_anchors = generate_anchors.generate_staggered_anchors(np.array([0, 1500]), 3000/N, N, 90, 2)
 
 # Simulate deployment error (GPS surveying inaccuracies).
 real_anchors = generate_anchors.perturb_points_max_1m(known_anchors)
