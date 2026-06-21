@@ -151,8 +151,8 @@ if __name__ == "__main__":
     ]
 
     # Unpack the new 5-element return tuple
-    # x, y, distances, start_pt, end_pt = generate_ultra_smooth_path(num_points_M=1001, link_distance_m=3.0)
-    x, y, distances, start_pt, end_pt = transform_data_to_fiber_format(raw_data)
+    x, y, distances, start_pt, end_pt = generate_ultra_smooth_path(num_points_M=1001, link_distance_m=3.0)
+    # x, y, distances, start_pt, end_pt = transform_data_to_fiber_format(raw_data)
     execution_time = (time.time() - start_time) * 1000
     
     print(f"Path generated in: {execution_time:.2f} milliseconds")

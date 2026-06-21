@@ -20,17 +20,17 @@ import point_smoother
 # ==============================================================================
 
 # N: Number of physical anchor nodes/transceivers deployed along the field
-N = 1000
+N = 500
 
 number_of_points = 3001
 
-hearing_range = 50
+hearing_range = 100
 # r: Oversampling factor. Number of independent temporal measurements taken 
 # per coordinate node to average out zero-mean Gaussian noise.
 r = 1
 
 # Generate ideal linear tracking anchor coordinates spanning from Y = 100m to Y = 1500m.
-known_anchors = generate_anchors.generate_staggered_anchors(np.array([0, 1500]), 3000/N, N, 90, 2)
+known_anchors = generate_anchors.generate_staggered_anchors(np.array([0, 1500]), 3000/N, N, 90, 4)
 
 # Simulate deployment error (GPS surveying inaccuracies).
 real_anchors = generate_anchors.perturb_points_max_1m(known_anchors)
@@ -47,10 +47,10 @@ for i in range(1, number_of_points):
     for _ in range(r):
         dists = point_est.generate_noisy_distances(
             [fiber_X[i], fiber_Y[i]], real_anchors,
-            # Pass hearing_range if your function supports it;
-            # remove the kwarg if it does not yet exist.
             hearing_range=hearing_range,
-        )
+        ) 
+        # this is a parat of the algorithm - the real anchors parameter (which is unknown to the algorithm) 
+        # is only used here to genrerate the distances the channel would detect in the real world.
         est[i] += point_est.estimate_single_point(
             known_anchors, dists, i, est[i - 1]
         )
@@ -59,7 +59,7 @@ for i in range(1, number_of_points):
 # --- SMOOTH ---
 est_x, est_y = \
     point_smoother.smooth_path_by_segments_with_overlap(
-        est, 20, 8, 50, 0
+        est, 20, 6, 50, 0
     )
 
 
@@ -80,7 +80,7 @@ plt.plot(fiber_X, fiber_Y, label="True path", linewidth=2)
 plt.scatter(est[:,0], est[:,1], label="Raw estimates", s=10, alpha=0.4)
 # plt.scatter(real_anchors[:,0], real_anchors[:,1], label="anchors")
 plt.plot(est_x, est_y, label="Smoothed estimate", linewidth=2, linestyle="--")
-plt.title("Forward-Only Fiber Path Estimation")
+plt.title("Fiber Path Estimation")
 plt.xlabel("X [m]")
 plt.ylabel("Y [m]")
 plt.legend()
@@ -103,7 +103,7 @@ plt.figure(figsize=(10, 4))
 plt.plot(fiber_Y, dists_points, label="Point-wise error", linewidth=1.5)
 plt.axhline(dists_points.mean(), color="gray", linestyle=":", linewidth=1.2,
             label=f"Mean error: {dists_points.mean():.1f} m")
-plt.title("Estimation Error Along Fiber (Forward-Only)")
+plt.title("Estimation Error Along Fiber")
 plt.xlabel("Y position [m]")
 plt.ylabel("Error [m]")
 plt.legend()
