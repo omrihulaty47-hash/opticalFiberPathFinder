@@ -9,22 +9,24 @@ on the historical spatial boundary of the previous node.
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Custom project modules for localization physics, path generation, and filtering
+# Custom project modules for localization physics and path generation.
+# Note: point_est / point_smoother are no longer imported here directly -
+# they're implementation details of localization_algorithm now, which is
+# the only thing that needs to know about them.
 import fiber_simulation
-import point_est
 import generate_anchors
-import point_smoother
+import algorithm
 
 # ==============================================================================
 # 1. SIMULATION ENVIRONMENT CONFIGURATION
 # ==============================================================================
 
 # N: Number of physical anchor nodes/transceivers deployed along the field
-N = 100
+N = 1000
 
 number_of_points = 3001
 
-hearing_range = 1000
+hearing_range = 50
 # r: Oversampling factor. Number of independent temporal measurements taken 
 # per coordinate node to average out zero-mean Gaussian noise.
 r = 1
@@ -41,37 +43,20 @@ real_anchors = generate_anchors.perturb_points_max_1m(known_anchors)
 fiber_X, fiber_Y, _, start_point, end_point = \
         fiber_simulation.generate_ultra_smooth_path(number_of_points)
 
-    # --- FORWARD PASS ---
-est    = np.zeros((number_of_points, 2))
-est[0] = start_point
+# --- SIMULATE THE CHANNEL: generate distance measurements ---
+# `real_anchors` (the deployment error - unknown to the algorithm) is only
+# ever used here, to generate the noisy distances the channel would detect
+# in the real world. From this point on, the algorithm only sees `distances`
+# and `known_anchors`.
+distances = algorithm.generate_distances(
+    fiber_X, fiber_Y, real_anchors, hearing_range, number_of_points, r=r,
+)
 
-for i in range(1, number_of_points):
-    for _ in range(r):
-        dists = point_est.generate_noisy_distances(
-            [fiber_X[i], fiber_Y[i]], real_anchors,
-            hearing_range=hearing_range,
-        ) 
-        # this is a parat of the algorithm - the real anchors parameter (which is unknown to the algorithm) 
-        # is only used here to genrerate the distances the channel would detect in the real world.
-        est[i] += point_est.estimate_single_point(
-            known_anchors, dists, i, est[i - 1]
-        )
-    est[i] /= r
-
-est[-1] = end_point
-
-# --- SMOOTH ---
-est_x, est_y = \
-    point_smoother.smooth_path_by_segments_with_overlap(
-        est, 20, 6, 50, 0, 50 if linearize_edges else 0
-    )
-
-
-# ==============================================================================
-# 3. POST-PROCESS SMOOTHING
-# ==============================================================================
-
-# Apply an overlapping segment-based polynomial smoothing filter to the raw forward estimates
+# --- RUN THE ALGORITHM (forward pass + smoothing) ---
+est, est_x, est_y = algorithm.estimate_path(
+    known_anchors, distances, number_of_points, start_point,
+    end_point=end_point, r=r, linearize_edges=linearize_edges,
+)
 
 
 # ==============================================================================
@@ -92,16 +77,9 @@ plt.tight_layout()
 plt.show()
 
 # --- PLOT 2: Cross-Sectional Registration Error Analysis ---
-# Sort arrays by Y to ensure the independent variable strictly increases for 1D interpolation
-sort_idx = np.argsort(est_y)
-est_y_sorted = est_y[sort_idx]
-est_x_sorted = est_x[sort_idx]
-
-# Resample the estimated X path coordinates onto the true ground-truth Y coordinate positions
-est_x_at_fiber_y = np.interp(fiber_Y, est_y_sorted, est_x_sorted)
-
-# Compute absolute horizontal offset errors at identical vertical cross-sections
-dists_points = np.abs(fiber_X - est_x_at_fiber_y)
+# Resample the estimated path onto the true ground-truth Y positions and
+# compute the absolute horizontal offset at each cross-section.
+dists_points = algorithm.compute_position_error(fiber_X, fiber_Y, est_x, est_y)
  
 plt.figure(figsize=(10, 4))
 plt.plot(fiber_Y, dists_points, label="Point-wise error", linewidth=1.5)

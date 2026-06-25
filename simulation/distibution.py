@@ -44,20 +44,20 @@ matplotlib.use("Agg")          # non-interactive backend – safe for headless r
 import matplotlib.pyplot as plt
 
 import fiber_simulation
-import point_est
 import generate_anchors
-import point_smoother
+import algorithm
 
 
 # ──────────────────────────────────────────────
 # SWEEP PARAMETERS  (edit these freely)
 # ──────────────────────────────────────────────
-ANCHOR_COUNTS   = [3,5,10,50,100,500,1000]    
-HEARING_RANGES  = [50,100,500,1000,3000] 
-NUM_TRIALS      = 20
+ANCHOR_COUNTS   = [1000]    
+HEARING_RANGES  = [50,70,90] 
+POS = [0,1500] # for large hearing ranges better to run away from 0, for small hearing ranges run close to 0 and with stuggered anchors
+NUM_TRIALS      = 5
 NUM_POINTS      = 3000
 REPETES         = 1
-RESULTS_ROOT    = "ranged_results_moved"
+RESULTS_ROOT    = "test"
 
 # Trim used for the "core" error metric: error is computed only on the
 # slice of points starting at the 50th point from the start and ending
@@ -86,35 +86,13 @@ def run_single_trial(anchors, repetes, hearing_range, num_points=3000):
     fiber_X, fiber_Y, _, start_point, end_point = \
         fiber_simulation.generate_ultra_smooth_path()
 
-    # --- FORWARD PASS ---
-    est_forward    = np.zeros((num_points, 2))
-    est_forward[0] = start_point
-
-    for i in range(1, num_points):
-        for _ in range(repetes):
-            dists = point_est.generate_noisy_distances(
-                [fiber_X[i], fiber_Y[i]], real_anchors,
-                # Pass hearing_range if your function supports it;
-                # remove the kwarg if it does not yet exist.
-                hearing_range=hearing_range,
-            )
-            est_forward[i] += point_est.estimate_single_point(
-                known_anchors, dists, i, est_forward[i - 1]
-            )
-        est_forward[i] /= repetes
-
-    # --- SMOOTH ---
-    smooth_fwd_x, smooth_fwd_y = \
-        point_smoother.smooth_path_by_segments_with_overlap(
-            est_forward, 20, 6, 50, 0
-        )
-
-    # --- Y-ALIGNED ERROR ---
-    sort_fwd           = np.argsort(smooth_fwd_y)
-    fwd_x_at_fiber_y   = np.interp(
-        fiber_Y, smooth_fwd_y[sort_fwd], smooth_fwd_x[sort_fwd]
+    # Note: unlike main.py, this trial never pins the last point to
+    # end_point - end_point=None below preserves that original behaviour.
+    _, _, _, fwd_errors = algorithm.run_full_pipeline(
+        known_anchors, real_anchors, fiber_X, fiber_Y,
+        start_point, end_point=None, hearing_range=hearing_range,
+        num_points=num_points, r=repetes, linearize_edges=False,
     )
-    fwd_errors = np.abs(fiber_X - fwd_x_at_fiber_y)
 
     # "Full" window: exclude last 100 points (matches your original)
     mean_full = float(np.mean(fwd_errors[:-100]))
@@ -133,11 +111,12 @@ def run_distribution(num_anchors, hearing_range,
                      num_trials=NUM_TRIALS, num_points=NUM_POINTS,
                      repetes=REPETES):
     """Runs `num_trials` trials and returns per-trial arrays."""
-    anchors = generate_anchors.generate_linear_anchors(
-        np.array([100, 1500]),
+    anchors = generate_anchors.generate_staggered_anchors(
+        np.array(POS),
         3000 / num_anchors,
         num_anchors,
-        90
+        90,
+        4
     )
 
     fwd_avg_dists, fwd_max_dists = [], []
