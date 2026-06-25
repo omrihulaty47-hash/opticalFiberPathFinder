@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import fiber_simulation
 
 def generate_circular_anchors(center_point, radius, num_anchors_N):
     """
@@ -204,7 +205,7 @@ def perturb_points_max_1m(points):
 
 if __name__ == "__main__":
     # Create 5 sample original points
-    original = generate_linear_anchors(np.array([0,0]), 10, 10, 0.0)
+    original = generate_staggered_anchors(np.array([0,1500]), 300, 10, 90, 4)
     
     # Perturb them
     perturbed = perturb_points_max_1m(original)
@@ -217,21 +218,29 @@ if __name__ == "__main__":
         print(f"Point {i+1}: Shifted by {distances[i]:.4f} meters (Max allowed: 1.0m)")
         
     # Quick plot to visually see the 1-meter bounding "halos"
-    plt.figure(figsize=(8, 6))
+    # plt.figure(figsize=(8, 6))
     plt.scatter(original[:, 0], original[:, 1], color='black', marker='o', s=50, label='Original Points', zorder=4)
     plt.scatter(perturbed[:, 0], perturbed[:, 1], color='red', marker='x', s=50, label='Perturbed Points', zorder=4)
     
     # Draw 1-meter boundary circles around the original points to prove compliance
     for idx, pt in enumerate(original):
-        circle = plt.Circle((pt[0], pt[1]), 1.0, color='blue', fill=False, linestyle='--', alpha=0.3)
-        plt.gca().add_patch(circle)
+        # circle = plt.Circle((pt[0], pt[1]), 1.0, color='blue', fill=False, linestyle='--', alpha=0.3)
+        # plt.gca().add_patch(circle)
         # Draw a small line connecting the movement
         plt.plot([original[idx, 0], perturbed[idx, 0]], [original[idx, 1], perturbed[idx, 1]], 'gray', alpha=0.5)
 
-    plt.title("Spatial Perturbation Map (Max 1 Meter Step Bounds)")
+
+    x, y, distances, start_pt, end_pt = fiber_simulation.generate_ultra_smooth_path(num_points_M=1001, link_distance_m=3.0)
+    plt.axvline(x=0, color='gray', linestyle=':', label='Ideal Center Line (X=0)')
+    
+    # Plotting the trajectory
+    plt.plot(x, y, color='blue', alpha=0.7, label='Ultra-Smooth Fiber Path')
+    plt.scatter(x, y, color='black', s=1, zorder=3)
+
+    plt.title("Anchors On Fiber (Max 1 Meter Step Bounds)")
     plt.xlabel("X (meters)")
     plt.ylabel("Y (meters)")
-    plt.axis('equal')
+    # plt.axis('equal')
     plt.grid(True, linestyle=':', alpha=0.5)
     plt.legend()
     plt.show()

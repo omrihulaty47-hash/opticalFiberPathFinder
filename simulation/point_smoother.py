@@ -10,7 +10,62 @@ while maintaining structural continuity via boundary window blending.
 import numpy as np
 from scipy.interpolate import UnivariateSpline  # Available for alternative spline workflows
 
-def smooth_path_by_polyfit_sections(points, num_sections=4, poly_degree=2, blend_percentage=0.2):
+
+def _linearize_edges(x_smooth, y_smooth, x_raw, y_raw, edge_linear_points):
+    """
+    Overwrites the first `edge_linear_points` and last `edge_linear_points`
+    samples of (x_smooth, y_smooth) with a straight line.
+
+    - The first N points become a straight line from the *actual* first raw
+      point (x_raw[0], y_raw[0]) to the already-computed smoothed value at
+      index N (i.e. the (N+1)-th point, which is left untouched).
+    - The last N points become a straight line from the *actual* last raw
+      point (x_raw[-1], y_raw[-1]) to the already-computed smoothed value at
+      index -(N+1) (the (N+1)-th point counting from the end, also left
+      untouched).
+
+    This pins the path's extremities to their known/observed endpoints
+    instead of letting the polynomial fit (which can wobble near the edges
+    where it has less context) determine their position.
+
+    Mutates x_smooth / y_smooth in place and also returns them.
+    """
+    n = int(edge_linear_points)
+    num_points_M = len(x_smooth)
+
+    if n <= 0:
+        return x_smooth, y_smooth
+
+    if 2 * n >= num_points_M:
+        # Not enough points to carve out two non-overlapping N-point edges;
+        # leave the path as computed rather than risk index errors / a
+        # degenerate (overlapping) linear region.
+        return x_smooth, y_smooth
+
+    # ── Leading edge: straight line from the first raw point to the
+    #    already-computed smoothed point at index N ──
+    x_target_start, y_target_start = x_smooth[n], y_smooth[n]
+    x_anchor_start, y_anchor_start = x_raw[0], y_raw[0]
+    for i in range(n):
+        w = i / n  # 0 at the anchor, approaching (but not reaching) 1 at i=n
+        x_smooth[i] = (1 - w) * x_anchor_start + w * x_target_start
+        y_smooth[i] = (1 - w) * y_anchor_start + w * y_target_start
+
+    # ── Trailing edge: straight line from the last raw point to the
+    #    already-computed smoothed point at index -(n+1) ──
+    x_target_end, y_target_end = x_smooth[-(n + 1)], y_smooth[-(n + 1)]
+    x_anchor_end, y_anchor_end = x_raw[-1], y_raw[-1]
+    for i in range(n):
+        idx = num_points_M - 1 - i
+        w = i / n  # 0 at the anchor (last point), approaching 1 toward the target
+        x_smooth[idx] = (1 - w) * x_anchor_end + w * x_target_end
+        y_smooth[idx] = (1 - w) * y_anchor_end + w * y_target_end
+
+    return x_smooth, y_smooth
+
+
+def smooth_path_by_polyfit_sections(points, num_sections=4, poly_degree=2, blend_percentage=0.2,
+                                     edge_linear_points=0):
     """
     Smooths an (M, 2) path using independent, rigid section-based polynomial fitting.
 
@@ -25,6 +80,12 @@ def smooth_path_by_polyfit_sections(points, num_sections=4, poly_degree=2, blend
     blend_percentage : float, default=0.2
         The percentage of the section width used to smoothly interpolate coordinates 
         at the segment boundaries. Must be between 0.0 and 0.5.
+    edge_linear_points : int, default=0
+        If > 0, the first N and last N output points (N = edge_linear_points)
+        are overwritten with a straight line running from the actual first/last
+        raw point to the already-computed smoothed point at the (N+1)-th
+        position from that edge. Set to 0 (default) to disable and keep the
+        original polynomial-fit behavior at the edges.
 
     Returns:
     --------
@@ -115,11 +176,14 @@ def smooth_path_by_polyfit_sections(points, num_sections=4, poly_degree=2, blend
         else:
             x_smooth[idx] = val_x_curr
             y_smooth[idx] = val_y_curr
-            
+
+    x_smooth, y_smooth = _linearize_edges(x_smooth, y_smooth, x_raw, y_raw, edge_linear_points)
+
     return x_smooth, y_smooth
 
 
-def smooth_path_by_segments_with_overlap(points, num_sections=4, poly_degree=2, extra_points=8, blend_percentage=0.2):
+def smooth_path_by_segments_with_overlap(points, num_sections=4, poly_degree=2, extra_points=8, blend_percentage=0.2,
+                                          edge_linear_points=0):
     """
     Smooths an (M, 2) path by dividing it into sections with overlapping context buffers.
     This limits edge distortion before applying boundary blending.
@@ -136,6 +200,12 @@ def smooth_path_by_segments_with_overlap(points, num_sections=4, poly_degree=2, 
         The lookback and lookahead node margin used to add context during fitting.
     blend_percentage : float, default=0.2
         The boundary width scale used for smoothstep blending.
+    edge_linear_points : int, default=0
+        If > 0, the first N and last N output points (N = edge_linear_points)
+        are overwritten with a straight line running from the actual first/last
+        raw point to the already-computed smoothed point at the (N+1)-th
+        position from that edge. Set to 0 (default) to disable and keep the
+        original polynomial-fit behavior at the edges.
 
     Returns:
     --------
@@ -221,5 +291,7 @@ def smooth_path_by_segments_with_overlap(points, num_sections=4, poly_degree=2, 
         else:
             x_smooth[idx] = val_x_curr
             y_smooth[idx] = val_y_curr
-            
+
+    x_smooth, y_smooth = _linearize_edges(x_smooth, y_smooth, x_raw, y_raw, edge_linear_points)
+
     return x_smooth, y_smooth

@@ -20,14 +20,16 @@ import point_smoother
 # ==============================================================================
 
 # N: Number of physical anchor nodes/transceivers deployed along the field
-N = 500
+N = 100
 
 number_of_points = 3001
 
-hearing_range = 100
+hearing_range = 1000
 # r: Oversampling factor. Number of independent temporal measurements taken 
 # per coordinate node to average out zero-mean Gaussian noise.
 r = 1
+
+linearize_edges = True
 
 # Generate ideal linear tracking anchor coordinates spanning from Y = 100m to Y = 1500m.
 known_anchors = generate_anchors.generate_staggered_anchors(np.array([0, 1500]), 3000/N, N, 90, 4)
@@ -56,10 +58,12 @@ for i in range(1, number_of_points):
         )
     est[i] /= r
 
+est[-1] = end_point
+
 # --- SMOOTH ---
 est_x, est_y = \
     point_smoother.smooth_path_by_segments_with_overlap(
-        est, 20, 6, 50, 0
+        est, 20, 6, 50, 0, 50 if linearize_edges else 0
     )
 
 

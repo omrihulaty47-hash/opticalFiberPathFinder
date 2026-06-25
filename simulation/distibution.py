@@ -21,9 +21,10 @@ For every (num_anchors, hearing_range) combination the script:
        • results/heatmap_median_max_error.png          (median of max error per combo)
        • results/heatmap_median_max_error_core.png      (same, core window)
 
-     The two "Mean Average Error" heatmaps (full and core) additionally
-     annotate each cell with the standard deviation across trials, shown
-     as "mean ± std", so the spread is visible alongside the average.
+     The "Mean Average Error" and "Mean Max Error" heatmaps (full and core,
+     four heatmaps total) additionally annotate each cell with the standard
+     deviation across trials, shown as "mean ± std", so the spread is
+     visible alongside the average.
 
 Usage
 -----
@@ -51,12 +52,12 @@ import point_smoother
 # ──────────────────────────────────────────────
 # SWEEP PARAMETERS  (edit these freely)
 # ──────────────────────────────────────────────
-ANCHOR_COUNTS   = list(range(500, 1001, 100))    
-HEARING_RANGES  = list(range(50, 101, 10)) 
+ANCHOR_COUNTS   = [3,5,10,50,100,500,1000]    
+HEARING_RANGES  = [50,100,500,1000,3000] 
 NUM_TRIALS      = 20
 NUM_POINTS      = 3000
 REPETES         = 1
-RESULTS_ROOT    = "results"
+RESULTS_ROOT    = "ranged_results_moved"
 
 # Trim used for the "core" error metric: error is computed only on the
 # slice of points starting at the 50th point from the start and ending
@@ -64,9 +65,6 @@ RESULTS_ROOT    = "results"
 CORE_TRIM       = 50
 
 
-# ──────────────────────────────────────────────
-# CORE SIMULATION  (mirrors your original code)
-# ──────────────────────────────────────────────
 
 def run_single_trial(anchors, repetes, hearing_range, num_points=3000):
     """
@@ -135,12 +133,11 @@ def run_distribution(num_anchors, hearing_range,
                      num_trials=NUM_TRIALS, num_points=NUM_POINTS,
                      repetes=REPETES):
     """Runs `num_trials` trials and returns per-trial arrays."""
-    anchors = generate_anchors.generate_staggered_anchors(
-        np.array([0, 1500]),
+    anchors = generate_anchors.generate_linear_anchors(
+        np.array([100, 1500]),
         3000 / num_anchors,
         num_anchors,
-        90,
-        4,
+        90
     )
 
     fwd_avg_dists, fwd_max_dists = [], []
@@ -316,6 +313,7 @@ def save_heatmaps(grid_avg, grid_max,
                   grid_median_avg, grid_median_max,
                   grid_median_avg_core, grid_median_max_core,
                   grid_std_avg, grid_std_avg_core,
+                  grid_std_max, grid_std_max_core,
                   anchor_counts, hearing_ranges, out_root):
     """
     grid_avg / grid_max / grid_avg_core / grid_max_core : 2-D arrays shaped
@@ -338,9 +336,12 @@ def save_heatmaps(grid_avg, grid_max,
     mean-based heatmaps above.
 
     grid_std_avg / grid_std_avg_core : same shape, holding the standard
-    deviation (across trials) of the avg error for that combo. These are
-    overlaid as "mean ± std" annotations on the Mean Average Error heatmaps
-    so the spread of the underlying trials is visible alongside the mean.
+    deviation (across trials) of the avg error for that combo. Overlaid as
+    "mean ± std" annotations on the Mean Average Error heatmaps so the
+    spread of the underlying trials is visible alongside the mean.
+
+    grid_std_max / grid_std_max_core : same idea, but for the max error —
+    overlaid as "mean ± std" annotations on the Mean Max Error heatmaps.
     """
 
     def _heatmap(data, title, filename, cmap, fmt, std_data=None):
@@ -387,9 +388,10 @@ def save_heatmaps(grid_avg, grid_max,
              "YlOrRd", "{:.2f}", std_data=grid_std_avg)
 
     _heatmap(grid_max,
-             "Mean Max Error Heatmap\n(anchors × hearing range)",
+             "Mean Max Error Heatmap (mean ± std across trials)\n"
+             "(anchors × hearing range)",
              "heatmap_max_error.png",
-             "YlOrRd", "{:.2f}")
+             "YlOrRd", "{:.2f}", std_data=grid_std_max)
 
     _heatmap(grid_avg_core,
              f"Mean Average Error Heatmap (mean ± std across trials, Core, "
@@ -399,10 +401,11 @@ def save_heatmaps(grid_avg, grid_max,
              "YlGnBu", "{:.2f}", std_data=grid_std_avg_core)
 
     _heatmap(grid_max_core,
-             f"Mean Max Error Heatmap (Core, pts {CORE_TRIM}..-{CORE_TRIM})\n"
+             f"Mean Max Error Heatmap (mean ± std across trials, Core, "
+             f"pts {CORE_TRIM}..-{CORE_TRIM})\n"
              "(anchors × hearing range)",
              "heatmap_max_error_core.png",
-             "YlGnBu", "{:.2f}")
+             "YlGnBu", "{:.2f}", std_data=grid_std_max_core)
 
     _heatmap(grid_max_of_max,
              "Worst-Case Max Error Heatmap\n"
@@ -463,6 +466,8 @@ def main():
     # Standard deviation (across trials) of the avg error per combo
     grid_std_avg = np.full((len(ANCHOR_COUNTS), len(HEARING_RANGES)), np.nan)
     grid_std_avg_core = np.full((len(ANCHOR_COUNTS), len(HEARING_RANGES)), np.nan)
+    grid_std_max = np.full((len(ANCHOR_COUNTS), len(HEARING_RANGES)), np.nan)
+    grid_std_max_core = np.full((len(ANCHOR_COUNTS), len(HEARING_RANGES)), np.nan)
 
     total = len(ANCHOR_COUNTS) * len(HEARING_RANGES)
     combo = 0
@@ -511,6 +516,9 @@ def main():
             # Spread (std dev) of the avg error across trials
             grid_std_avg[ai, ri] = fwd_avg.std()
             grid_std_avg_core[ai, ri] = fwd_avg_core.std()
+            # Spread (std dev) of the max error across trials
+            grid_std_max[ai, ri] = fwd_max.std()
+            grid_std_max_core[ai, ri] = fwd_max_core.std()
 
     # ── Final heatmaps ───────────────────────────────────────────────────
     print(f"\n{'═'*60}")
@@ -522,6 +530,7 @@ def main():
                   grid_median_avg, grid_median_max,
                   grid_median_avg_core, grid_median_max_core,
                   grid_std_avg, grid_std_avg_core,
+                  grid_std_max, grid_std_max_core,
                   ANCHOR_COUNTS, HEARING_RANGES, RESULTS_ROOT)
 
     # ── Print summary table ──────────────────────────────────────────────
